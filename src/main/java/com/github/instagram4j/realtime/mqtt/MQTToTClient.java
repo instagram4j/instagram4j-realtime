@@ -122,9 +122,19 @@ public class MQTToTClient implements Closeable {
             }
         } while ((data & 128) != 0);
         
+        log.debug("Received fixed header {} and length is {} bytes.", PacketUtil.hexStringify(packet_data), length);
+        
         packet_data = Arrays.copyOf(packet_data, packet_data.length + length);
-        this.incoming.read(packet_data, 1, length);
-
+        
+        while (length > 0) {
+            int readLength = this.incoming.read(packet_data, packet_data.length - length, length);
+            log.debug("Read length {}", readLength);
+            if (readLength == -1) {
+                throw new IOException("Reached end of stream when reading payload!");
+            }
+            length -= readLength;
+        }
+        
         return packet_data;
     }
     
