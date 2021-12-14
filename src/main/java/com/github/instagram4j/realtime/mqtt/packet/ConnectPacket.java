@@ -1,61 +1,78 @@
 package com.github.instagram4j.realtime.mqtt.packet;
 
 import com.github.instagram4j.realtime.utils.PacketUtil;
-import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
-@Setter(AccessLevel.PROTECTED)
-public class ConnectPacket extends RequestPacket {
+public class ConnectPacket extends Packet {
     private static final byte CONNECT_PACKET_TYPE = 1;
-    private String PROTOCOL_NAME = "MQTT";
-    private byte PROTOCOL_LEVEL = 4;
-    private byte USER_NAME = 0;
-    private byte PASSWORD = 0;
-    private byte WILL_RETAIN = 0;
-    private byte WILL_QOS = 0;
-    private byte WILL_FLAG = 0;
-    private byte CLEAN_SESSION = 1;
-    private byte RESERVED = 0;
-    private short KEEP_ALIVE = 20;
+    private final String protocolName;
+    private final byte protocolLevel;
+    private final byte username;
+    private final byte password;
+    private final byte willRetain;
+    private final byte willQoS;
+    private final byte willFlag;
+    private final byte cleanSession;
+    private final byte reserved;
+    private final short keepAlive;
+    private final byte fixedHeaderParameter;
+    private final byte[] variableHeader;
+    private final byte[] payload;
+    
+    // private final String PROTOCOL_NAME = "MQTT";
+    // private final byte PROTOCOL_LEVEL = 4;
+    // private final byte USER_NAME = 0;
+    // private final byte PASSWORD = 0;
+    // private final byte WILL_RETAIN = 0;
+    // private final byte WILL_QOS = 0;
+    // private final byte WILL_FLAG = 0;
+    // private final byte CLEAN_SESSION = 1;
+    // private final byte RESERVED = 0;
+    // private final short KEEP_ALIVE = 20;
 
-    @Override
-    protected FixedHeader getFixedHeader() {
-        return new FixedHeader(CONNECT_PACKET_TYPE, (byte) 0x0);
-    }
-
-    @Override
-    protected Payload getPayload() {
-        Payload payload = new Payload();
-
-        payload.writeString("mqttkkejmmfk");
-
-        return payload;
-    }
-
-    @Override
-    protected VariableHeader getVariableHeader() {
-        VariableHeader variable_header = new VariableHeader();
-
-        variable_header.writeString(PROTOCOL_NAME);
-        variable_header.writeByte(PROTOCOL_LEVEL);
-        variable_header.writeByte(getConnectFlags());
-        variable_header.writeByteArray(PacketUtil.to_msb_lsb(KEEP_ALIVE));
-
-        return variable_header;
+    public ConnectPacket(
+            final String protocolName,
+            final byte protocolLevel,
+            final byte username,
+            final byte password,
+            final byte willRetain,
+            final byte willQoS,
+            final byte willFlag,
+            final byte cleanSession,
+            final byte reserved,
+            final short keepAlive,
+            final byte[] payload) {
+        this.protocolName = protocolName;
+        this.protocolLevel = protocolLevel;
+        this.username = username;
+        this.password = password;
+        this.willRetain = willRetain;
+        this.willQoS = willQoS;
+        this.willFlag = willFlag;
+        this.cleanSession = cleanSession;
+        this.reserved = reserved;
+        this.keepAlive = keepAlive;
+        this.fixedHeaderParameter = PacketUtil.toFixedHeaderParameter(CONNECT_PACKET_TYPE, (byte) 0x0);
+        this.variableHeader = new Payload()
+                .writeString(protocolName)
+                .writeByte(protocolLevel)
+                .writeByte(this.getConnectFlags())
+                .writeByteArray(PacketUtil.toMsbLsb(keepAlive))
+                .toByteArray();
+        this.payload = payload;
     }
 
     protected byte getConnectFlags() {
-        byte output = 0;
-        output |= PacketUtil.shift(USER_NAME, 7);
-        output |= PacketUtil.shift(PASSWORD, 6);
-        output |= PacketUtil.shift(WILL_RETAIN, 5);
-        output |= PacketUtil.shift(WILL_QOS, 3);
-        output |= PacketUtil.shift(WILL_FLAG, 2);
-        output |= PacketUtil.shift(CLEAN_SESSION, 1);
-        // bit position 0 (RESERVED) set to 0 as of 3.1.1
-        return output;
-    }
+        int output = 0;
+        output |= this.username << 7;
+        output |= this.password << 6;
+        output |= this.willRetain << 5;
+        output |= this.willQoS << 3;
+        output |= this.willFlag << 2;
+        output |= this.cleanSession << 1;
 
+        // bit position 0 (RESERVED) set to 0 as of 3.1.1
+        return (byte) output;
+    }
 }

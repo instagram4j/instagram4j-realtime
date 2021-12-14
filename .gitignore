@@ -26,6 +26,3 @@ build/
 bin/
 gradle.properties
 .DS_Store
-
-# Test directory for now
-src/test/

@@ -5,36 +5,49 @@ import java.io.UncheckedIOException;
 import com.github.instagram4j.realtime.utils.PacketUtil;
 import com.github.instagram4j.realtime.utils.ZipUtil;
 
-public class Payload implements Packet {
-    private ByteArrayOutputStream out = new ByteArrayOutputStream();
+public class Payload {
+    private final ByteArrayOutputStream out = new ByteArrayOutputStream();
     
-    public void writeString(String s) {
-        this.writeByteArray(PacketUtil.encoded_UTF8(s));
+    public Payload writeString(final String s) {
+        this.writeByteArray(PacketUtil.encodeUTF8(s));
+        
+        return this;
     }
     
-    public void writeByte(byte b) {
+    public Payload writeShort(final short s) {
+        this.writeByteArray(PacketUtil.toMsbLsb(s));
+        
+        return this;
+    }
+    
+    public Payload writeByte(final byte b) {
         out.write(b);
+        
+        return this;
     }
     
-    public void writeByteArray(byte[] b) {
+    public Payload writeByteArray(final byte[] b) {
         try {
             out.write(b);
+            
+            return this;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
     
-    public void compress() {
-        byte[] compressed = ZipUtil.zip(out.toByteArray());
+    public Payload compress() {
+        final byte[] compressed = ZipUtil.zip(out.toByteArray());
         try {
             out.reset();
             out.write(compressed);
+            
+            return this;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
     
-    @Override
     public byte[] toByteArray() {
         return out.toByteArray();
     }

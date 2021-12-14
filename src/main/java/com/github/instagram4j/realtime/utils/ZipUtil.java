@@ -22,7 +22,7 @@ public class ZipUtil {
         return baos.toByteArray();
     }
     
-    public static byte[] unzip(byte[] in) {
+    public static byte[] unzip(byte[] in) throws DataFormatException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream(in.length);
         Inflater decompressor = new Inflater();
         
@@ -30,14 +30,8 @@ public class ZipUtil {
 
         byte[] buffer = new byte[1024];
         while (!decompressor.finished()) {
-            int len;
-            try {
-                len = decompressor.inflate(buffer);
-                baos.write(buffer, 0, len);
-            } catch (DataFormatException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
+            final int len = decompressor.inflate(buffer);
+            baos.write(buffer, 0, len);
         }
         
         return baos.toByteArray();

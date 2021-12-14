@@ -22,7 +22,21 @@ import org.apache.thrift.protocol.TStruct;
 import org.apache.thrift.protocol.TType;
 import org.apache.thrift.transport.TIOStreamTransport;
 
-public class ThriftUtil {
+public final class ThriftUtil {
+    
+    private ThriftUtil() {
+    }
+    
+    /**
+     * Given a POJO return the a thrift representation. Fields of the POJO must be
+     * annotated with a ThriftField to be included in the serialization
+     * 
+     * @param o POJO to serialize
+     * @return Thrift payload byte array
+     * @throws IllegalArgumentException
+     * @throws IllegalAccessException
+     * @throws TException
+     */
     public static byte[] serialize(Object o)
             throws IllegalArgumentException, IllegalAccessException, TException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -97,7 +111,19 @@ public class ThriftUtil {
 
         return true;
     }
-
+    
+    /**
+     * Given a thrift encoded byte array, deserialize thrift payload into a POJO
+     * 
+     * @param <T>
+     * @param arr The thrift payload
+     * @param clazz The POJO to deserialize into
+     * @return The deserialized thrift payload POJO
+     * @throws InstantiationException
+     * @throws IllegalAccessException
+     * @throws IllegalArgumentException
+     * @throws TException
+     */
     public static <T> T deserialize(byte[] arr, Class<T> clazz) throws InstantiationException,
             IllegalAccessException, IllegalArgumentException, TException {
         ByteArrayInputStream bais = new ByteArrayInputStream(arr);
@@ -198,6 +224,4 @@ public class ThriftUtil {
     public static @interface ThriftField {
         public int id();
     }
-
-
 }

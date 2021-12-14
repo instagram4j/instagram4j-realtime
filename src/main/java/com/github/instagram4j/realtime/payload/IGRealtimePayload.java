@@ -87,5 +87,4 @@ public class IGRealtimePayload {
     public byte[] toThriftPayload() throws IllegalArgumentException, IllegalAccessException, TException {
         return ThriftUtil.serialize(this);
     }
-    
 }

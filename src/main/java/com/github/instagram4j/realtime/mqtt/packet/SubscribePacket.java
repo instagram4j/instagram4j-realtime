@@ -1,41 +1,23 @@
 package com.github.instagram4j.realtime.mqtt.packet;
 
+import java.util.stream.Stream;
 import com.github.instagram4j.realtime.utils.PacketUtil;
+import lombok.Getter;
 
-public class SubscribePacket extends RequestPacket {
+@Getter
+public class SubscribePacket extends Packet {
     public static final byte SUBSCRIBE_PACKET_TYPE = 8;
-    private short packet_id;
+    private short packetIdentifier;
     private Topic[] topics;
+    private byte fixedHeaderParameter;
+    private byte[] variableHeader;
+    private byte[] payload;
     
-    public SubscribePacket(int packet_identifier, Topic... topics) {
-        this.packet_id = (short) packet_identifier;
+    public SubscribePacket(short packetIdentifier, Topic... topics) {
+        this.packetIdentifier = packetIdentifier;
         this.topics = topics;
+        this.fixedHeaderParameter = PacketUtil.toFixedHeaderParameter(SUBSCRIBE_PACKET_TYPE, (byte) 2);
+        this.variableHeader = new Payload().writeByteArray(PacketUtil.toMsbLsb(packetIdentifier)).toByteArray();
+        this.payload = Stream.of(topics).reduce(new Payload(), (payload, topic) -> payload.writeString(topic.getName()).writeByte(topic.getQoS()), (x,y) -> x).toByteArray();
     }
-    
-    @Override
-    protected FixedHeader getFixedHeader() {
-        return new FixedHeader(SUBSCRIBE_PACKET_TYPE, (byte) 0x2);
-    }
-
-    @Override
-    protected VariableHeader getVariableHeader() {
-        VariableHeader variableHeader = new VariableHeader();
-        
-        variableHeader.writeByteArray(PacketUtil.to_msb_lsb(packet_id));
-        
-        return variableHeader;
-    }
-
-    @Override
-    protected Payload getPayload() {
-        Payload payload = new VariableHeader();
-        
-        for (Topic topic : topics) {
-            payload.writeString(topic.getName());
-            payload.writeByte(topic.getQoS());
-        }
-        
-        return payload;
-    }
-
 }

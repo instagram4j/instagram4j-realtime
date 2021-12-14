@@ -1,117 +1,124 @@
 package com.github.instagram4j.realtime.mqtt;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Arrays;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.function.Consumer;
 import javax.net.ssl.SSLSocketFactory;
-import org.apache.http.concurrent.FutureCallback;
 import com.github.instagram4j.realtime.mqtt.packet.ConnackPacket;
 import com.github.instagram4j.realtime.mqtt.packet.DisconnectPacket;
 import com.github.instagram4j.realtime.mqtt.packet.MQTToTConnectPacket;
 import com.github.instagram4j.realtime.mqtt.packet.Packet;
-import com.github.instagram4j.realtime.mqtt.packet.PingReqPacket;
 import com.github.instagram4j.realtime.mqtt.packet.PubackPacket;
 import com.github.instagram4j.realtime.mqtt.packet.PublishPacket;
-import com.github.instagram4j.realtime.mqtt.packet.PublishResponsePacket;
 import com.github.instagram4j.realtime.utils.PacketUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class MQTToTClient {
+public class MQTToTClient implements Closeable {
     private Socket socket;
     private InputStream incoming;
     private OutputStream outgoing;
     private final String host;
     private final int port;
-    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
-    private Future<?> ping_task, incoming_task;
-
-    public MQTToTClient(String host, int port) {
+    private final List<Consumer<Packet>> packetListeners;
+    
+    /**
+     * Construct a MQTToTClient to connect to the specified server host and port.
+     * 
+     * Optionally, add packet listeners to act on packet received events.
+     * 
+     * @param host Server Host name
+     * @param port Server Port number
+     * @param packetListeners An array of packet consumers to listen on when a packet is received
+     */
+    @SafeVarargs
+    public MQTToTClient(String host, int port, Consumer<Packet> ...packetListeners) {
         this.host = host;
         this.port = port;
+        this.packetListeners = Arrays.asList(packetListeners);
     }
-
-    public boolean connect(byte[] connectPayload) throws UnknownHostException, IOException {
+    
+    /**
+     * Connects the MQTToT client and is a blocking operation.
+     * 
+     * @param connectPayload The MQTToT connect packet payload
+     * @param onReady Runs upons successful connection
+     * @throws UnknownHostException
+     * @throws IOException
+     */
+    public void connect(byte[] connectPayload, Runnable onReady) throws UnknownHostException, IOException {
         socket = SSLSocketFactory.getDefault().createSocket(host, port);
         incoming = socket.getInputStream();
         outgoing = socket.getOutputStream();
 
         this.send(new MQTToTConnectPacket(connectPayload));
-        ConnackPacket connack = this.await_connack();
+        ConnackPacket connack = this.awaitConnack();
 
-        if (connack.getReturnCode() == 0) {
-            log.info("Successfully connected to {}:{}", host, port);
-            this.assign_tasks();
-            
-            return true;
-        } else {
+        if (connack.getReturnCode() != 0) {
             log.error("CONNACK received code: {}", connack.getReturnCode());
             this.disconnect();
-            return false;
+            return;
+        }
+        
+        log.info("Successfully connected to {}:{}", host, port);
+        
+        onReady.run();
+        
+        while(true) {
+            this.readPacket();
         }
     }
     
-    private void assign_tasks() {
-        this.ping_task = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                this.send(new PingReqPacket());
-            } catch (Throwable e) {
-                log.error("Exception occured during ping request", e);
-                this.ping_task.cancel(true);
+    private void readPacket() throws IOException {
+        final byte[] data = this.read();
+        log.debug("Received: {}", PacketUtil.hexStringify(data));
+        final byte packetControlType = PacketUtil.getControlType(data[0]);
+        if (packetControlType == PublishPacket.PUBLISH_PACKET_TYPE) {
+            final PublishPacket packet = new PublishPacket(data);
+            if (packet.getQoS() >= 1) {
+                log.debug("Sending PUBACK for ID={} QoS={}", packet.getPacketIdentifier(), packet.getQoS());
+                this.send(new PubackPacket(packet.getPacketIdentifier()));
             }
-        }, 19500, 19500, TimeUnit.MILLISECONDS);
-        
-        this.incoming_task = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                byte[] data = this.read();
-                log.debug("Received (Length not encoded): {}", PacketUtil.hex_stringify(data));
-                // TODO: Add proper MQTT spec handling and packet receive listeners
-                PublishResponsePacket res_packet = new PublishResponsePacket(data);
-                if (res_packet.getControlType() == PublishPacket.PUBLISH_PACKET_TYPE) {
-                    log.debug("Received publish packet payload {}", res_packet.getJSONPayload());
-                    if (res_packet.toByteArray()[0] == 0x32) {
-                        // qos is 1 must send send PUBACK packet
-                        this.send(new PubackPacket(res_packet.getIdentifier()));
-                    }
-                }
-            } catch (Throwable e) {
-                log.error("Exception occured when reading from stream", e);
-                this.incoming_task.cancel(true);
-            }
-        }, 1, 1, TimeUnit.MILLISECONDS);
+            packetListeners.forEach(consumer -> consumer.accept(packet));
+        }
     }
 
-    protected ConnackPacket await_connack() throws IOException {
-        byte[] data = read();
+    private ConnackPacket awaitConnack() throws IOException {
+        byte[] data = this.read();
         ConnackPacket packet = new ConnackPacket(data);
-        log.debug("Received awaiting CONNACK {}", data);
-        if (packet.getControlType() != ConnackPacket.CONNACK_PACKET_TYPE)
-            throw new IllegalStateException("Expected CONNACK but received type " + packet.getControlType());
+        log.debug("Received CONNACK: {}", data);
 
         return packet;
     }
-
+    
+    /**
+     * Reads from the socket according to MQTT 3.1.1 Specifications.
+     * 
+     * @return The packet data without the fixed header length. 
+     *         The first byte is the fixed header parameter, and the 
+     *         remaining bytes are the variable header and/or payload.
+     * @throws IOException
+     */
     private byte[] read() throws IOException {
         byte[] packet_data = new byte[1];
         int data = this.incoming.read(packet_data);
         
-        if (data == -1) throw new RuntimeException("End of stream");
+        if (data == -1) throw new IOException("End of stream");
         
         int multiplier = 1, length = 0;
         do {
             data = this.incoming.read();
-            if (data == -1) throw new RuntimeException("Reached end of stream when reading length!");
+            if (data == -1) throw new IOException("Reached end of stream when reading length!");
             length += (data & 127) * multiplier;
             multiplier *= 128;
             if (multiplier > 2097152) {
-                throw new RuntimeException("Malformed length");
+                throw new IOException("Malformed length");
             }
         } while ((data & 128) != 0);
         
@@ -120,21 +127,35 @@ public class MQTToTClient {
 
         return packet_data;
     }
-
+    
+    /**
+     * Sends a packet to the MQTT broker.
+     * 
+     * @param packet A MQTT/MQTToT 3.1.1 specified packet
+     * @throws IOException
+     */
     public void send(Packet packet) throws IOException {
         byte[] outgoing_byte_arr = packet.toByteArray();
 
-        log.debug("Sent: {}", PacketUtil.hex_stringify(outgoing_byte_arr));
+        log.debug("Sent: {}", PacketUtil.hexStringify(outgoing_byte_arr));
 
         outgoing.write(packet.toByteArray());
     }
-
+    
+    /**
+     * Disconnects the MQTT client and cleans up.
+     * 
+     * @throws IOException
+     */
     public void disconnect() throws IOException {
         this.send(new DisconnectPacket());
-        this.incoming_task.cancel(true);
-        this.ping_task.cancel(true);
-        incoming.close();
-        outgoing.close();
-        socket.close();
+        this.close();
+    }
+
+    @Override
+    public void close() throws IOException {
+        this.incoming.close();
+        this.outgoing.close();
+        this.socket.close();
     }
 }

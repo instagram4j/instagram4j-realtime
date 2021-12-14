@@ -1,21 +1,12 @@
 package com.github.instagram4j.realtime.mqtt.packet;
 
-public class DisconnectPacket extends RequestPacket {
+import com.github.instagram4j.realtime.utils.PacketUtil;
+import lombok.Getter;
+
+@Getter
+public class DisconnectPacket extends Packet {
     public static final byte DISCONNECT_PACKET_TYPE = 14;
-    
-    @Override
-    protected FixedHeader getFixedHeader() {
-        return new FixedHeader(DISCONNECT_PACKET_TYPE, (byte) 0);
-    }
-
-    @Override
-    protected VariableHeader getVariableHeader() {
-        return new VariableHeader();
-    }
-
-    @Override
-    protected Payload getPayload() {
-        return new Payload();
-    }
-
+    private byte fixedHeaderParameter = PacketUtil.toFixedHeaderParameter(DISCONNECT_PACKET_TYPE, (byte) 0);
+    private byte[] variableHeader = new byte[0];
+    private byte[] payload = new byte[0];
 }

@@ -1,39 +1,62 @@
 package com.github.instagram4j.realtime.mqtt.packet;
 
+import java.util.Arrays;
 import com.github.instagram4j.realtime.utils.PacketUtil;
+import lombok.Getter;
 
-public class PublishPacket extends RequestPacket {
+@Getter
+public class PublishPacket extends Packet {
     public static final byte PUBLISH_PACKET_TYPE = 3;
-    private String topic_name;
-    private short packet_id;
-    private Payload payload;
-    
-    public PublishPacket(String topic_name, int packet_identifier, Payload payload) {
-        this.topic_name = topic_name;
-        this.packet_id = (short) packet_identifier;
+    private final boolean dupFlag;
+    private final byte QoS;
+    private final boolean retain;
+    private final String topicName;
+    private final short packetIdentifier;
+    private final byte fixedHeaderParameter;
+    private final byte[] variableHeader;
+    private final byte[] payload;
+
+    public PublishPacket(
+            final boolean dupFlag,
+            final byte Qos,
+            final boolean retain,
+            final String topicName,
+            final short packetIdentifier,
+            final byte[] payload) {
+        this.dupFlag = dupFlag;
+        this.QoS = Qos;
+        this.retain = retain;
+        this.topicName = topicName;
+        this.packetIdentifier = packetIdentifier;
+        this.fixedHeaderParameter = PacketUtil.toFixedHeaderParameter(PUBLISH_PACKET_TYPE, this.getPublishParameters());
+        this.variableHeader = new Payload()
+                .writeString(this.topicName)
+                .writeByteArray(QoS != 0 ? PacketUtil.toMsbLsb(this.packetIdentifier) : new byte[0])
+                .toByteArray();
         this.payload = payload;
     }
     
-    @Override
-    protected FixedHeader getFixedHeader() {
-        // control flags (0x2) 0010
-        // dup: 0 qos: 01 retain: 0
-        return new FixedHeader(PUBLISH_PACKET_TYPE, (byte) 0x2);
+    public PublishPacket(byte[] data) {
+        this.fixedHeaderParameter = data[0];
+        this.retain = (this.fixedHeaderParameter & 0x1) == 1 ? true : false;
+        this.QoS = (byte) ((this.fixedHeaderParameter >>> 1) & 0x3);
+        this.dupFlag = ((this.fixedHeaderParameter >>> 3) & 0x1) == 1 ? true : false;
+        final int topicNameLength = PacketUtil.fromMsbLsb(data[1], data[2]);
+        this.topicName = PacketUtil.stringify(Arrays.copyOfRange(data, 3, 3 + topicNameLength));
+        final int packetIdentifierPos = 3 + topicNameLength;
+        this.packetIdentifier = this.QoS != 0 ? PacketUtil.fromMsbLsb(data[packetIdentifierPos], data[packetIdentifierPos + 1]) : 0;
+        final int variableHeaderLength = topicNameLength + (this.QoS != 0 ? 4 : 2);
+        this.variableHeader = Arrays.copyOfRange(data, 1, 1 + variableHeaderLength);
+        this.payload = Arrays.copyOfRange(data, 1 + variableHeaderLength, data.length);
     }
-
-    @Override
-    protected VariableHeader getVariableHeader() {
-        VariableHeader variableHeader = new VariableHeader();
+    
+    private byte getPublishParameters() {
+        int parameters = 0;
         
-        variableHeader.writeString(this.topic_name);
-        variableHeader.writeByteArray(PacketUtil.to_msb_lsb(this.packet_id));
+        parameters |= (this.dupFlag ? 1 : 0) << 3;
+        parameters |= this.QoS << 1;
+        parameters |= this.retain ? 1 : 0;
         
-        return variableHeader;
+        return (byte) parameters;
     }
-
-    @Override
-    protected Payload getPayload() {
-        return this.payload;
-    }
-
 }

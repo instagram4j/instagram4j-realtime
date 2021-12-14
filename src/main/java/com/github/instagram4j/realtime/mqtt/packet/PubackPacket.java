@@ -1,26 +1,19 @@
 package com.github.instagram4j.realtime.mqtt.packet;
 
-public class PubackPacket extends RequestPacket {
+import com.github.instagram4j.realtime.utils.PacketUtil;
+import lombok.Getter;
+
+@Getter
+public class PubackPacket extends Packet {
     public static byte PUBACK_PAKCET_TYPE = 4;
-    private short packet_identifier;
+    private final short packetIdentifier;
+    private final byte fixedHeaderParameter;
+    private final byte[] variableHeader;
+    private final byte[] payload = new byte[0];
     
-    public PubackPacket(short packet_identifier) {
-        this.packet_identifier = packet_identifier;
+    public PubackPacket(final short packetIdentifier) {
+        this.packetIdentifier = packetIdentifier;
+        this.fixedHeaderParameter = PacketUtil.toFixedHeaderParameter(PUBACK_PAKCET_TYPE, (byte) 0x2);
+        this.variableHeader = new Payload().writeByteArray(PacketUtil.toMsbLsb(this.packetIdentifier)).toByteArray();
     }
-    
-    @Override
-    protected FixedHeader getFixedHeader() {
-        return new FixedHeader(PUBACK_PAKCET_TYPE, (byte) 0x2);
-    }
-
-    @Override
-    protected VariableHeader getVariableHeader() {
-        return new VariableHeader(this.packet_identifier);
-    }
-
-    @Override
-    protected Payload getPayload() {
-        return new Payload();
-    }
-    
 }
